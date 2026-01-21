@@ -7,8 +7,13 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Chemin vers le modèle entraîné
-TRAINED_MODEL_PATH = Path(__file__).parent.parent / "models" / "cv_ner"
+# Ordre de recherche des modèles (priorité à cv_ner_final)
+MODEL_CANDIDATES = [
+    Path(__file__).parent.parent / "models" / "cv_ner_final",
+    Path(__file__).parent.parent / "models" / "cv_ner",
+    Path(__file__).parent.parent / "models" / "cv_ner_stage1",
+    Path(__file__).parent.parent / "models" / "cv_pipeline",
+]
 BASE_MODEL = "fr_core_news_md"
 
 # Titres de sections courants à ignorer pour les noms
@@ -129,22 +134,27 @@ def clean_name(text: str) -> str:
     return text.strip()
 
 def load_spacy_model():
+    """Charge le modèle spaCy : essaie plusieurs dossiers en priorité, retourne (nlp, is_trained).
+
+    Ordre : cv_ner_final, cv_ner, cv_ner_stage1, cv_pipeline, ensuite fr_core_news_md.
     """
-    Charge le modèle spaCy : utilise le modèle entraîné s'il existe,
-    sinon charge le modèle de base fr_core_news_md
-    """
-    if TRAINED_MODEL_PATH.exists():
+    for candidate in MODEL_CANDIDATES:
         try:
-            logger.info(f"Chargement du modèle entraîné depuis: {TRAINED_MODEL_PATH}")
-            model = spacy.load(str(TRAINED_MODEL_PATH))
-            logger.info("✓ Modèle entraîné chargé avec succès")
-            return model, True
+            if candidate.exists():
+                logger.info(f"Chargement du modèle entraîné depuis: {candidate}")
+                model = spacy.load(str(candidate))
+                logger.info("✓ Modèle entraîné chargé avec succès")
+                return model, True
         except Exception as e:
-            logger.warning(f"Erreur lors du chargement du modèle entraîné: {e}")
-            logger.info(f"Fallback vers le modèle de base: {BASE_MODEL}")
-    
-    logger.info(f"Chargement du modèle de base: {BASE_MODEL}")
-    return spacy.load(BASE_MODEL), False
+            logger.warning(f"Erreur lors du chargement du modèle {candidate}: {e}")
+
+    # fallback to base model
+    try:
+        logger.info(f"Chargement du modèle de base: {BASE_MODEL}")
+        return spacy.load(BASE_MODEL), False
+    except Exception as e:
+        logger.error(f"Impossible de charger le modèle de base {BASE_MODEL}: {e}")
+        raise
 
 # Charge le modèle de langue français (entraîné ou base)
 nlp, IS_TRAINED_MODEL = load_spacy_model()
@@ -334,10 +344,10 @@ def extraire_entites(texte):
         r'\b(Master\s+(?:en\s+)?[A-Za-zÀ-ÿ\s\-\']{3,50})',
         r'\b(Licence\s+(?:en\s+)?[A-Za-zÀ-ÿ\s\-\']{3,50})',
         r'\b(DUT|BTS|BEP|CAP)\s+[A-Za-zÀ-ÿ\s\-\']{3,50}',
-        r'\b(Diplôme\s+[A-Za-zÀ-ÿ\s\-\']{3,50})',
-        r'\b(MBA|PhD|Doctorat|Ingénieur|Engineer)\b',
+        r'\b(Dipl[oô]me\s+[A-Za-zÀ-ÿ\s\-\']{3,50})',
+        r'\b(MBA|PhD|Doctorat|Ing[eé]nieur|Engineer)\b',
     ]
-    
+
     for pattern in diploma_patterns:
         for m in re.finditer(pattern, texte, flags=re.IGNORECASE):
             diploma = m.group(0).strip()

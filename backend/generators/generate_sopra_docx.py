@@ -7,6 +7,7 @@ from docx.shared import Pt, Inches, RGBColor
 from typing import Dict, List, Optional, Any
 import re
 
+
 # ---------------------------
 #      HELPERS VISUELS
 # ---------------------------
@@ -25,7 +26,25 @@ def add_horizontal_line(paragraph, color="7030A0"):
     pbdr.append(bottom)
 
     pPr.append(pbdr)
+# ---------------------------
+#      DOCX FORMATTING      
+# ---------------------------
+from docx.shared import Pt, Cm, RGBColor
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 
+
+def set_paragraph_spacing(paragraph, space_after=6, line_spacing=1.15):
+    p = paragraph._p
+    pPr = p.get_or_add_pPr()
+
+    # Espacement après paragraphe
+    spacing = OxmlElement("w:spacing")
+    spacing.set(qn("w:after"), str(space_after * 20))  # valeur en twips
+    spacing.set(qn("w:line"), str(int(line_spacing * 240)))
+    spacing.set(qn("w:lineRule"), "auto")
+
+    pPr.append(spacing)
 
 def set_cell_shading(cell, color):
     """Définit la couleur de fond d'une cellule."""
@@ -90,131 +109,161 @@ def bullets(lst, fallback="Non renseigné"):
         return f"• {fallback}"
     return "\n".join(f"• {v}" for v in clean_items)
 
+def format_experiences(exps):
 
-def format_experiences(exps: List[Dict], style: str = "professional") -> str:
-    """
-    Formate les expériences avec les données réelles extraites.
-    
-    Args:
-        exps: Liste des expériences structurées
-        style: "professional" (détaillé) ou "compact" (résumé)
-    """
     if not isinstance(exps, list) or not exps:
         return "• Aucune expérience renseignée"
 
-    bloc = ""
-    
-    # Trier par date (anti-chronologique)
-    sorted_exps = sort_experiences_by_date(exps)
-    
-    for e in sorted_exps:
-        if not isinstance(e, dict):
+    result = []
+
+    for exp in exps:
+        exp = exp.strip()
+        if not exp:
             continue
-        
-        # Extraire les données
-        dates = normalize_date_display(e.get("dates"))
-        entreprise = e.get("entreprise") or "Entreprise non précisée"
-        poste = e.get("poste") or ""
-        lieu = e.get("lieu", "")
-        description = e.get("description")
 
-        if style == "professional":
-            # Format professionnel détaillé
-            header = f"{dates}"
-            if lieu:
-                header += f" – {lieu}"
-            bloc += f"{header}\n"
-            
-            if poste:
-                bloc += f"**{poste}** – {entreprise}\n"
-            else:
-                bloc += f"**{entreprise}**\n"
-            
-            if description and description.strip():
-                # Formater la description avec des puces
-                desc_lines = description.strip().split('\n')
-                for line in desc_lines:
-                    line = line.strip()
-                    if line and not line.startswith('•') and not line.startswith('-'):
-                        bloc += f"  • {line}\n"
-                    elif line:
-                        bloc += f"  {line}\n"
-            
-            bloc += "\n"
+        # ----- CAS SPÉCIAL : expériences contenant des projets -----
+        if "Projets" in exp:
+            parts = exp.split("Projets", 1)
+
+            header = parts[0].strip().rstrip(" :")
+            details = parts[1].strip()
+
+            # Titre principal
+            result.append(f"{header} : Projets")
+            result.append("")
+
+            # Nettoyage du mot "Projets" résiduel
+            details = details.replace("Projets", "").strip()
+
+            # Découper chaque projet à partir de "Projet individuel"
+            projets = re.split(r"(Projet individuel)", details)
+
+            for i in range(1, len(projets), 2):
+                projet = projets[i] + projets[i + 1]
+
+                # Nettoyage COMPLET des caractères invisibles
+                projet = projet.replace("\n", " ")
+                projet = projet.replace("\t", " ")
+                projet = projet.replace("\r", " ")
+                projet = projet.replace("\xa0", " ")   # espace insécable
+
+                # Supprimer tous espaces multiples
+                projet = re.sub(r"[ ]{2,}", " ", projet)
+
+                # Nettoyage final
+                projet = projet.strip()
+
+                result.append("• " + projet)
+
+            result.append("")
+            continue
+
+        # ----- CAS NORMAL (autres expériences) -----
+        split_keywords = ["Programme", "Stage"]
+
+        split_index = -1
+        for kw in split_keywords:
+            idx = exp.find(kw)
+            if idx != -1:
+                split_index = idx
+                break
+
+        if split_index != -1:
+            header = exp[:split_index].strip()
+            details = exp[split_index:].strip()
+
+            result.append(header)
+            result.append(f"• {details}")
         else:
-            # Format compact
-            if poste:
-                bloc += f"• {poste} – {entreprise} ({dates})\n"
-            else:
-                bloc += f"• {entreprise} ({dates})\n"
+            result.append(f"• {exp}")
 
-    return bloc.strip() if bloc.strip() else "• Aucune expérience renseignée"
+        result.append("")
+
+    return "\n".join(result).strip()
 
 
-def format_formations(forms: List[Dict], style: str = "professional") -> str:
-    """
-    Formate les formations avec diplôme si disponible.
-    
-    Args:
-        forms: Liste des formations structurées
-        style: "professional" (détaillé) ou "compact" (résumé)
-    """
-    if not isinstance(forms, list) or not forms:
+
+
+def format_formations(forms):
+
+    if not forms:
         return "• Aucune formation renseignée"
-    
-    # Trier par date (anti-chronologique)
+
     sorted_forms = sort_formations_by_date(forms)
-    
+
     lines = []
+
     for f in sorted_forms:
-        if not isinstance(f, dict):
+
+        # Cas 1 : formation en string (nouveau format)
+        if isinstance(f, str):
+            lines.append(f"• {f}")
             continue
-        
-        etablissement = f.get('etablissement', 'Établissement non précisé')
-        dates = normalize_date_display(f.get('dates'))
-        diplome = f.get('diplome')
-        lieu = f.get('lieu', '')
-        
-        if style == "professional":
+
+        # Cas 2 : ancien format dict
+        if isinstance(f, dict):
+            etablissement = f.get("etablissement", "Établissement non précisé")
+            dates = normalize_date_display(f.get("dates"))
+            diplome = f.get("diplome")
+
             if diplome:
-                line = f"**{diplome}**\n  {etablissement}"
-                if lieu:
-                    line += f" – {lieu}"
-                line += f" ({dates})"
+                line = f"• {diplome} – {etablissement} ({dates})"
             else:
-                line = f"**{etablissement}**"
-                if lieu:
-                    line += f" – {lieu}"
-                line += f" ({dates})"
+                line = f"• {etablissement} ({dates})"
+
             lines.append(line)
-        else:
-            # Format compact
-            if diplome:
-                lines.append(f"• {diplome} – {etablissement} ({dates})")
-            else:
-                lines.append(f"• {etablissement} ({dates})")
-    
+
     return "\n".join(lines) if lines else "• Aucune formation renseignée"
 
 
-def sort_experiences_by_date(exps: List[Dict]) -> List[Dict]:
-    """Trie les expériences par date (anti-chronologique)."""
+
+def sort_experiences_by_date(exps):
+    """Trie les expériences par date (anti-chronologique) en acceptant string ou dict."""
+
     def extract_year(exp):
-        dates = str(exp.get("dates", ""))
-        match = re.search(r'(19|20)\d{2}', dates)
-        return int(match.group(0)) if match else 0
-    
+
+        if isinstance(exp, str):
+            match = re.search(r"(19|20)\d{2}", exp)
+            if match:
+                return int(match.group(0))
+            return 0
+
+        if isinstance(exp, dict):
+            dates = str(exp.get("dates", ""))
+            match = re.search(r"(19|20)\d{2}", dates)
+            if match:
+                return int(match.group(0))
+            return 0
+
+        return 0
+
     return sorted(exps, key=extract_year, reverse=True)
 
 
-def sort_formations_by_date(forms: List[Dict]) -> List[Dict]:
-    """Trie les formations par date (anti-chronologique)."""
+def sort_formations_by_date(forms):
+    """Trie les formations par date (anti-chronologique) en acceptant string ou dict."""
+
     def extract_year(form):
-        dates = str(form.get("dates", ""))
-        match = re.search(r'(19|20)\d{2}', dates)
-        return int(match.group(0)) if match else 0
-    
+
+        # Cas 1 : la formation est une STRING
+        if isinstance(form, str):
+            match = re.search(r"(19|20)\d{2}", form)
+            if match:
+                return int(match.group(0))
+            return 0
+
+        # Cas 2 : la formation est un DICT (ancien format)
+        if isinstance(form, dict):
+            dates = str(form.get("dates", ""))
+            match = re.search(r"(19|20)\d{2}", dates)
+            if match:
+                return int(match.group(0))
+            return 0
+
+        return 0
+
     return sorted(forms, key=extract_year, reverse=True)
+
 
 
 def normalize_date_display(date_str: Optional[str]) -> str:
@@ -248,7 +297,120 @@ def format_contact(contact):
     
     return "\n".join(lines) if lines else "Contact non renseigné"
 
+def format_experiences_jlo(exps):
 
+    result = []
+
+    date_pattern = r"(Janvier|Février|Mars|Avril|Mai|Juin|Juillet|Août|Septembre|Octobre|Novembre|Décembre|\d{4})"
+
+    action_verbs = [
+        "Réponses", "Assurer", "Développer", "Procéduriser",
+        "Rédaction", "Accompagner", "Mettre en place",
+        "Suivi", "Participation", "Réalisation"
+    ]
+
+    for line in exps:
+        if not line:
+            continue
+
+        line = line.strip()
+
+        # Nouvelle expérience détectée
+        if re.search(date_pattern, line[:40]):
+
+            result.append("")
+
+            # On cherche si un verbe d’action est collé au titre
+            cut_index = None
+
+            for verb in action_verbs:
+                idx = line.find(" " + verb + " ")
+                if idx != -1:
+                    cut_index = idx
+                    break
+
+            # Si on a trouvé un verbe → on coupe
+            if cut_index:
+                title = line[:cut_index].strip()
+                first_detail = line[cut_index + 1:].strip()
+
+                result.append(title)
+                result.append("• " + first_detail)
+
+            else:
+                # Pas de verbe détecté → ligne normale
+                result.append(line)
+
+        else:
+            # Ligne normale → simple puce
+            result.append("• " + line)
+
+    return "\n".join(result).strip()
+
+
+def choose_experience_formatter(exps):
+
+    if not exps or not isinstance(exps, list):
+        return format_experiences(exps)
+
+    first = exps[0]
+
+    mois_fr = [
+        "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+        "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+    ]
+
+    # Si on détecte un CV type JLA (présence d’un mois en toutes lettres)
+    if isinstance(first, str) and any(m in first for m in mois_fr):
+        return format_experiences_jlo(exps)
+
+    # Sinon on garde EXACTEMENT ton format actuel (Léo)
+    return format_experiences(exps)
+
+
+# ---------------------------
+#      DOCX HEADER
+# ---------------------------
+def add_header_to_document(doc, titre_profil, nom):
+    """
+    Ajoute le titre de profil et le nom dans l'en-tête du document
+    à partir de la deuxième page.
+    """
+    for section in doc.sections:
+        # Activer un header différent pour la première page
+        section.different_first_page_header_footer = True
+        
+        # Marges pour l'en-tête
+        section.top_margin = Cm(2.5)
+        section.header_distance = Cm(1.5)
+        # En-tête par défaut (pages 2+)
+        header = section.header
+        
+        # Nettoyer l'en-tête existant
+        for paragraph in header.paragraphs:
+            paragraph.clear()
+        
+        # Ajouter le titre profil (sans saut de ligne avant)
+        p_titre = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+        run_titre = p_titre.add_run(titre_profil)
+        run_titre.bold = True
+        run_titre.font.size = Pt(12)
+        run_titre.font.color.rgb = RGBColor(0, 0, 0) 
+        p_titre.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        set_paragraph_spacing(p_titre, space_after=2, line_spacing=1.0)
+        
+        # Ajouter le nom
+        p_nom = header.add_paragraph()
+        run_nom = p_nom.add_run(nom)
+        run_nom.bold = True
+        run_nom.font.size = Pt(10)
+        run_nom.font.color.rgb = RGBColor(0, 0, 0)
+        p_nom.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        set_paragraph_spacing(p_nom, space_after=6, line_spacing=1.0)
+        
+        # Ligne de séparation orange Sopra
+        p_line = header.add_paragraph()
+        add_horizontal_line(p_line, color="F08650")
 # ---------------------------
 #   GENERATE DOCX FINAL
 # ---------------------------
@@ -261,75 +423,112 @@ def generate_sopra_docx(cv_data, output_path):
     doc = Document(template_path)
 
     contact = cv_data.get("contact", {}) or {}
-    titre_profil = cv_data.get("titre_profil") or "Profil Collaborateur"
 
-    # -------------------------
-    #  1) GRAND TITRE (Nom + Titre Profil)
-    # -------------------------
+    titre_profil = contact.get("titre_profil") or "Profil Collaborateur"
     nom = contact.get("nom") or "Nom Prénom"
-    
-    if doc.paragraphs:
-        title_paragraph = doc.paragraphs[0]
-        title_paragraph.text = nom
-        
-        if title_paragraph.runs:
-            title_paragraph.runs[0].bold = True
-            try:
-                title_paragraph.runs[0].font.size = doc.styles['Heading 1'].font.size
-            except:
-                title_paragraph.runs[0].font.size = Pt(24)
 
-    # Ajouter le titre du profil
-    profil_para = doc.add_paragraph()
-    profil_run = profil_para.add_run(titre_profil)
-    profil_run.bold = True
-    profil_run.font.size = Pt(14)
-    
-    # Ajouter la ligne horizontale style Sopra
-    line = doc.add_paragraph()
-    add_horizontal_line(line)
+    competences = cv_data.get("competences", {}) or {}
 
-    # -------------------------
-    # 2) EXTRACTION DES BLOCS COMPLETS
-    # -------------------------
-    comp_fonct, comp_tech = classify_competences(cv_data.get("competences", []))
-    
-    projets = cv_data.get("projets", [])
-    projets_str = bullets(projets, "Aucun projet renseigné") if projets else ""
-    
-    disponibilite = cv_data.get("disponibilite")
-    dispo_str = disponibilite if disponibilite else "Non précisée"
+    comp_tech = competences.get("techniques", [])
+    comp_fonct = competences.get("fonctionnelles", [])
+
+    experiences_raw = cv_data.get("experiences", [])
+
+    # Si c'est déjà une chaîne multi-lignes (cas Walid), on l'utilise directement
+    if isinstance(experiences_raw, str):
+
+        lines = []
+        for line in experiences_raw.split("\n"):
+
+            line = line.strip()
+            if not line:
+                lines.append("")
+                continue
+
+            # Si la ligne contient une période -> c'est un TITRE
+            if re.search(r"(Depuis\s+\d{4}|\d{4}\s*à\s*\d{4})", line):
+                lines.append(line)
+
+            # sinon c'est une mission -> on ajoute une puce
+            else:
+                lines.append("• " + line)
+
+        experiences_formatted = "\n".join(lines)
+
+    else:
+        experiences_formatted = choose_experience_formatter(experiences_raw)
 
     mapping = {
-        "{{NOM}}": nom,
         "{{TITRE_PROFIL}}": titre_profil,
-        "{{CONTACT}}": format_contact(contact),
-        "{{EMAIL}}": contact.get("email") or "Non renseigné",
-        "{{TELEPHONE}}": contact.get("telephone") or "Non renseigné",
-        "{{ADRESSE}}": contact.get("adresse") or "Non renseignée",
+        "{{NOM_PRENOM}}": nom,
         "{{COMP_FONCT}}": bullets(comp_fonct, "Aucune compétence fonctionnelle"),
         "{{COMP_TECH}}": bullets(comp_tech, "Aucune compétence technique"),
-        "{{COMPETENCES}}": bullets(cv_data.get("competences", []), "Aucune compétence"),
-        "{{EXPERIENCES}}": format_experiences(cv_data.get("experiences")),
-        "{{FORMATIONS}}": format_formations(cv_data.get("formations")),
+        "{{EXPERIENCES}}": experiences_formatted,
+        "{{FORMATIONS_CERTIFICATIONS}}": format_formations(cv_data.get("formations", [])),
         "{{LANGUES}}": bullets(cv_data.get("langues", []), "Non renseigné"),
-        "{{CERTIFICATIONS}}": bullets(cv_data.get("certifications", []), "Aucune certification"),
-        "{{LOISIRS}}": bullets(cv_data.get("loisirs", []), "Non renseigné"),
-        "{{PROJETS}}": projets_str,
-        "{{DISPONIBILITE}}": dispo_str,
     }
 
-    # -------------------------
-    # 3) REMPLACEMENT TEMPLATE COMPLET
-    # -------------------------
+
+    # --------- REMPLACEMENT CONTENU ---------
     for p in doc.paragraphs:
-        original_text = p.text
         for key, val in mapping.items():
             if key in p.text:
-                p.text = p.text.replace(key, val if val else "Non renseigné")
-                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    
-    # Parcourir aussi les tableaux si présents
+
+                p.clear()
+
+                # ----- CAS SPÉCIAL EXPERIENCES -----
+                if key == "{{EXPERIENCES}}":
+
+                    lines = val.split("\n")
+                    # ---- AJOUT D'UN ESPACE AVANT LA PREMIÈRE EXPÉRIENCE ----
+                    p.insert_paragraph_before("")
+
+                    for line in lines:
+
+                        if not line.strip():
+                            doc.add_paragraph("")
+                            continue
+
+                        new_p = p.insert_paragraph_before("")
+                        run = new_p.add_run(line)
+
+                        # TITRE → aligné à gauche
+                        if not line.strip().startswith("•"):
+                            new_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                            run.bold = True
+
+                        # DÉTAIL → justifié
+                        else:
+                            new_p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                            new_p.paragraph_format.left_indent = Cm(1.0)
+
+                        set_paragraph_spacing(new_p, space_after=6, line_spacing=1.15)
+
+                    # on vide le paragraphe template
+                    p.text = ""
+
+                # ----- CAS NORMAL -----
+                else:
+                    run = p.add_run(val if val else "Non renseigné")
+
+                    if key == "{{TITRE_PROFIL}}":
+                        for run in p.runs:
+                            run.bold = True
+                            run.font.size = Pt(20)
+                            run.font.color.rgb = RGBColor(77, 27, 130)
+                        set_paragraph_spacing(p, space_after=4, line_spacing=1.1)
+
+                    elif key == "{{NOM_PRENOM}}":
+                        for run in p.runs:
+                            run.bold = True
+                            run.font.size = Pt(16)
+                            run.font.color.rgb = RGBColor(0, 0, 0)
+                        set_paragraph_spacing(p, space_after=10, line_spacing=1.1)
+
+                    else:
+                        set_paragraph_spacing(p, space_after=8, line_spacing=1.2)
+
+    # Traiter les tableaux
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
@@ -337,7 +536,10 @@ def generate_sopra_docx(cv_data, output_path):
                     for key, val in mapping.items():
                         if key in p.text:
                             p.text = p.text.replace(key, val if val else "Non renseigné")
+                    set_paragraph_spacing(p, space_after=8, line_spacing=1.2)
 
+    #  AJOUTER L'EN-TÊTE POUR LES PAGES 2+
+    add_header_to_document(doc, titre_profil, nom)
 
     doc.save(output_path)
     return output_path
@@ -428,13 +630,15 @@ def validate_cv_data(cv_data: Dict) -> List[str]:
         warnings.append("Aucune formation")
     else:
         for i, f in enumerate(formations):
-            if not f.get("etablissement") and not f.get("diplome"):
-                warnings.append(f"Formation {i+1}: établissement et diplôme manquants")
+            if isinstance(f, dict):
+                if not f.get("etablissement") and not f.get("diplome"):
+                    warnings.append(f"Formation {i+1}: établissement et diplôme manquants")
     
     # Vérifier les expériences
     experiences = cv_data.get("experiences", [])
     if not experiences:
         warnings.append("Aucune expérience")
+
     else:
         for i, e in enumerate(experiences):
             if not e.get("entreprise"):
@@ -444,29 +648,33 @@ def validate_cv_data(cv_data: Dict) -> List[str]:
 
 
 def preview_cv_content(cv_data: Dict) -> str:
-    """
-    Génère un aperçu texte du contenu CV.
-    """
+
     lines = []
-    
+
     contact = cv_data.get("contact", {})
     lines.append(f"=== {contact.get('nom', 'N/A')} ===")
     lines.append(f"Email: {contact.get('email', 'N/A')}")
     lines.append(f"Tél: {contact.get('telephone', 'N/A')}")
     lines.append("")
-    
+
     lines.append("--- FORMATIONS ---")
     for f in cv_data.get("formations", [])[:3]:
-        lines.append(f"  • {f.get('diplome', 'N/A')} - {f.get('etablissement', 'N/A')}")
-    
+        lines.append(f"  • {f}")
+
     lines.append("")
     lines.append("--- EXPÉRIENCES ---")
     for e in cv_data.get("experiences", [])[:3]:
-        lines.append(f"  • {e.get('poste', 'N/A')} - {e.get('entreprise', 'N/A')}")
-    
+        lines.append(f"  • {e}")
+
     lines.append("")
     lines.append("--- COMPÉTENCES ---")
-    skills = cv_data.get("competences", [])[:10]
-    lines.append(f"  {', '.join(skills) if skills else 'N/A'}")
-    
+
+    competences = cv_data.get("competences", {})
+
+    tech = competences.get("techniques", [])
+    fonct = competences.get("fonctionnelles", [])
+
+    lines.append("Techniques : " + ", ".join(tech))
+    lines.append("Fonctionnelles : " + ", ".join(fonct))
+
     return "\n".join(lines)

@@ -1,0 +1,22 @@
+from extractors.robust_extractor import extract_text_from_pdf, extract_text_from_docx, extract_text
+import json
+
+print("---- PDF Extraction ----")
+text = extract_text_from_pdf('data/input/CV_LEO_WEBER_1.pdf')
+print(text)
+print("\n\n")
+print("------------------------1-------------------------")
+text = extract_text_from_pdf('data/input/CV_OBI_Fullstack_java_angular (1).pdf')
+print(text)
+print("\n\n")
+print("-------------------------2------------------------")
+text = extract_text_from_pdf('data/input/CV-Adele PATAROT.pdf')
+print(text)
+print("\n\n")   
+print("--------------------------3-----------------------")  
+text = extract_text_from_pdf('data/input/CV_MAROUEN_BEN_AZZOUZ_10-2025 6.pdf')
+print(text)
+print("\n\n")
+print("---- DOCX Extraction ----")
+text = extract_text_from_docx('data/input/CV_JLA_202504.docx')
+print(text)

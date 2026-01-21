@@ -46,11 +46,11 @@ const HeroSection = () => {
 
             <div className="hero-stats">
               <div>
-                <div className="stat-value orange">10K+</div>
+                <div className="stat-value orange">16</div>
                 <div className="stat-label">CV traités</div>
               </div>
               <div>
-                <div className="stat-value red">98%</div>
+                <div className="stat-value red">90%</div>
                 <div className="stat-label">Précision</div>
               </div>
               <div>

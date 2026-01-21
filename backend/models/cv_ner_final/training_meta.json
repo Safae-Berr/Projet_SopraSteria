@@ -1,0 +1,21 @@
+{
+  "base_model": "C:\\Users\\safae\\Desktop\\Projet-Sopra-Steria\\backend\\models\\cv_ner_stage1",
+  "trained_on": "2026-01-19T11:37:18.642288",
+  "iterations": 10,
+  "labels": [
+    "COMPANY",
+    "DATE_RANGE",
+    "DIPLOMA",
+    "JOB_TITLE",
+    "LANGUAGE",
+    "LOCATION",
+    "PERSON_NAME",
+    "SCHOOL",
+    "SKILL"
+  ],
+  "examples_count": 431,
+  "train_count": 431,
+  "val_count": 0,
+  "test_count": 0,
+  "metrics": {}
+}

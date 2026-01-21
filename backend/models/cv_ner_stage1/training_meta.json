@@ -1,0 +1,21 @@
+{
+  "base_model": "blank:fr",
+  "trained_on": "2026-01-19T11:36:42.856686",
+  "iterations": 20,
+  "labels": [
+    "COMPANY",
+    "DATE_RANGE",
+    "DIPLOMA",
+    "JOB_TITLE",
+    "LANGUAGE",
+    "LOCATION",
+    "PERSON_NAME",
+    "SCHOOL",
+    "SKILL"
+  ],
+  "examples_count": 93,
+  "train_count": 93,
+  "val_count": 0,
+  "test_count": 0,
+  "metrics": {}
+}

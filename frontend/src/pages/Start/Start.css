@@ -470,3 +470,7 @@
   }
 }
 
+.underline-title {
+  text-decoration: underline;
+  font-weight: normal;
+}
